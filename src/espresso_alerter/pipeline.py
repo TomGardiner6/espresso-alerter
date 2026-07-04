@@ -49,8 +49,15 @@ def _passes_bargain_gate(
     prices = store.recent_prices(target.name, config.history_window)
     median = statistics.median(prices) if len(prices) >= config.history_window else None
 
-    # Scam sanity check: absurdly cheap vs running median, or no location.
+    # Scam/accessory sanity checks: below the target's absolute floor,
+    # absurdly cheap vs running median, or no location.
     # Suppressed listings do NOT feed the price history.
+    if listing.price < target.min_price:
+        log.info(
+            "suppressed=below-floor target=%r price=%.2f floor=%.2f url=%s",
+            target.name, listing.price, target.min_price, listing.url,
+        )
+        return None
     if median is not None and listing.price < median * config.scam_median_fraction:
         log.info(
             "suppressed=scam-price target=%r price=%.2f median=%.2f url=%s",
@@ -95,10 +102,12 @@ def sweep(config: Config, sources: list[Source], store: Store) -> list[Candidate
         for target in config.targets:
             try:
                 listings = source.fetch(target, config)
-            except Exception:
-                log.exception(
-                    "source=%s target=%r fetch failed; continuing", source.name, target.name
+            except Exception as exc:
+                log.warning(
+                    "source=%s target=%r fetch failed: %s; continuing",
+                    source.name, target.name, exc,
                 )
+                log.debug("fetch failure traceback", exc_info=True)
                 continue
 
             for listing in listings:

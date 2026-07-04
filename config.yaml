@@ -34,29 +34,41 @@ exclude_keywords:
   - manual only
   - box only
   - empty box
+  - storage
+  - knock box
+  - wanted   # Gumtree carries "Wanted: ..." ads posted by buyers
+
+# min_price is an absolute floor per target: cheaper listings are accessories
+# or scams, never the real machine (caught a £3 "storage accessory" on the
+# first live sweep). Applies even before median history exists.
 
 targets:
   - name: Gaggia Classic
     keywords: ["gaggia classic"]
     max_price: 130
     bargain_price: 90
+    min_price: 30
 
   - name: Rancilio Silvia
     keywords: ["rancilio silvia", "rancilio miss silvia"]
     max_price: 180
     bargain_price: 140
+    min_price: 40
 
   - name: Sage Barista Express
     keywords: ["sage barista express", "breville barista express"]
     max_price: 260
     bargain_price: 190
+    min_price: 50
 
   - name: 1Zpresso grinder
     keywords: ["1zpresso"]
     max_price: 70
     bargain_price: 45
+    min_price: 15
 
   - name: Timemore Chestnut
     keywords: ["timemore chestnut"]
     max_price: 55
     bargain_price: 35
+    min_price: 10

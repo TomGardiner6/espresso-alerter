@@ -15,6 +15,9 @@ class Target:
     keywords: list[str]
     max_price: float
     bargain_price: float
+    # Absolute floor: anything cheaper is an accessory or a scam, never the
+    # real machine. Guards the cold-start window before median history exists.
+    min_price: float = 0
     # Optional per-target override of the global exclusion list, for the day
     # you decide you *do* want e.g. spares listings for one model.
     exclude_keywords: list[str] | None = None

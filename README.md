@@ -66,9 +66,11 @@ A listing only becomes an alert if **all** of these hold:
    `history_window` (default 20) genuine sightings of that target across all
    sources. With fewer sightings than that, `bargain_price` alone decides and
    the alert notes "insufficient history".
-4. **Scam sanity check** — listings priced below `scam_median_fraction`
-   (default 25%) of the running median, or with no location, are suppressed
-   with a log line and never alerted.
+4. **Scam/accessory sanity check** — listings priced below the target's
+   `min_price` floor (a £3 "Barista Express storage accessory" is not a
+   Barista Express), below `scam_median_fraction` (default 25%) of the
+   running median, or with no location, are suppressed with a log line and
+   never alerted.
 
 Qualifying listings are batched into a single digest message, and
 `min_hours_between_messages` (default 3) rate-caps sends globally — held
@@ -79,6 +81,21 @@ allowed message, surviving restarts, notifier outages, and dry runs.
 
 Every listing ever seen is stored keyed by `(source, listing_id)`, so nothing
 is alerted twice.
+
+## Gumtree scraping notes
+
+Gumtree has no API, so `sources/gumtree.py` scrapes the public search pages.
+Two failure modes to know about (both isolated to that one module, and a
+Gumtree outage never blocks the eBay sweep):
+
+- **Markup changes** break the selectors. The module docstring documents the
+  update procedure; the selectors target Gumtree's own `data-q` test hooks,
+  which are far more stable than its auto-generated CSS classes.
+- **Bot protection** (Radware). Burst traffic gets served a JavaScript
+  challenge (HTTP 247) instead of results. The scraper paces requests ~10s
+  apart, detects the challenge page, and backs off for 30 minutes rather
+  than hammering. Expect occasionally intermittent Gumtree coverage — eBay
+  is the reliable backbone.
 
 ## Future additions (not yet implemented)
 
@@ -120,7 +137,7 @@ is alerted twice.
 
 1. ✅ eBay source + normaliser + SQLite + dry-run printing
 2. ✅ Telegram notifier + rate cap (persistent pending queue)
-3. ⬜ Gumtree source (scraper isolated in one module; selectors will break
+3. ✅ Gumtree source (scraper isolated in one module; selectors will break
    when Gumtree changes layout)
 4. ✅ Rolling-median bargain logic (built alongside stage 1, verified in stage 4)
 5. ⬜ Scheduler (APScheduler loop)

@@ -7,6 +7,7 @@ import logging
 from ..config import Config
 from .base import Source
 from .ebay import EbaySource
+from .gumtree import GumtreeSource
 
 log = logging.getLogger(__name__)
 
@@ -23,5 +24,7 @@ def build_sources(config: Config) -> list[Source]:
             "source=ebay skipped reason=missing-credentials "
             "(set EBAY_CLIENT_ID / EBAY_CLIENT_SECRET in .env)"
         )
+
+    sources.append(GumtreeSource())  # scraping, no credentials needed
 
     return sources
