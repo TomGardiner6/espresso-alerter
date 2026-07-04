@@ -77,6 +77,16 @@ alerts are persisted and included in the next allowed message.
 Every listing ever seen is stored keyed by `(source, listing_id)`, so nothing
 is alerted twice.
 
+## Future additions (not yet implemented)
+
+- **LLM deal verification before alerting** — once a listing passes the
+  bargain gate, hand its details *and photos* to a multimodal LLM to judge
+  whether it's genuinely a good deal (condition from the pictures, stock-photo
+  scams, wrong/incomplete model, missing accessories) before it reaches
+  Telegram. Candidate: Gemini Pro (API key already available). Would slot in
+  as a post-gate/pre-notify step in the pipeline, with the key loaded from
+  `.env` (e.g. `GEMINI_API_KEY`) like the other credentials.
+
 ## Build stages
 
 1. ✅ eBay source + normaliser + SQLite + dry-run printing
