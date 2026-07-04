@@ -1,0 +1,28 @@
+# Secrets — never commit; see .env.example for required keys
+.env
+.env.*
+!.env.example
+
+# Generated data — never commit
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+logs/
+*.log
+
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv

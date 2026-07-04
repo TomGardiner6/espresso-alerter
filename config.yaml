@@ -1,0 +1,62 @@
+# Espresso bargain alerter configuration.
+# Prices in GBP. Credentials live in .env, never here.
+
+location: "Oxford"
+max_distance_miles: 40
+
+sweep_interval_minutes: 45
+min_hours_between_messages: 3
+
+# Rolling median: a listing must be under the median of the last
+# `history_window` genuine sightings of the same target (all sources).
+history_window: 20
+
+# Scam sanity check: suppress listings priced below this fraction of the
+# running median (default 25%), or with no location at all.
+scam_median_fraction: 0.25
+
+# Titles containing any of these phrases never match a target
+# (word-boundary match, case-insensitive). Override per target with its own
+# `exclude_keywords` list if you ever *want* e.g. spares listings.
+exclude_keywords:
+  - spares
+  - parts
+  - spares or repair
+  - broken
+  - not working
+  - faulty
+  - for repair
+  - descaler
+  - descaling
+  - portafilter only
+  - basket
+  - hopper only
+  - manual only
+  - box only
+  - empty box
+
+targets:
+  - name: Gaggia Classic
+    keywords: ["gaggia classic"]
+    max_price: 130
+    bargain_price: 90
+
+  - name: Rancilio Silvia
+    keywords: ["rancilio silvia", "rancilio miss silvia"]
+    max_price: 180
+    bargain_price: 140
+
+  - name: Sage Barista Express
+    keywords: ["sage barista express", "breville barista express"]
+    max_price: 260
+    bargain_price: 190
+
+  - name: 1Zpresso grinder
+    keywords: ["1zpresso"]
+    max_price: 70
+    bargain_price: 45
+
+  - name: Timemore Chestnut
+    keywords: ["timemore chestnut"]
+    max_price: 55
+    bargain_price: 35
