@@ -23,6 +23,15 @@ uv run espresso-alerter --once             # one sweep, send for real
 uv run espresso-alerter                    # scheduled loop (every sweep_interval_minutes)
 ```
 
+The default (no `--once`) runs a blocking scheduler: an immediate first sweep,
+then one every `sweep_interval_minutes`. Ctrl-C stops it. Prefer cron? Schedule
+the `--once` form instead — it shares the same SQLite state (pending queue,
+rotation cursor), so it behaves identically:
+
+```cron
+*/45 * * * *  cd /path/to/espresso-alerter && /path/to/uv run espresso-alerter --once
+```
+
 `--verbose` enables debug logging. Logs go to `logs/alerter.log`; state lives
 in `alerter.db` (SQLite). Both are gitignored generated data — never commit
 them.
@@ -92,10 +101,16 @@ Gumtree outage never blocks the eBay sweep):
   update procedure; the selectors target Gumtree's own `data-q` test hooks,
   which are far more stable than its auto-generated CSS classes.
 - **Bot protection** (Radware). Burst traffic gets served a JavaScript
-  challenge (HTTP 247) instead of results. The scraper paces requests ~10s
-  apart, detects the challenge page, and backs off for 30 minutes rather
-  than hammering. Expect occasionally intermittent Gumtree coverage — eBay
-  is the reliable backbone.
+  challenge (HTTP 247) instead of results. Defences, in layers: the pipeline
+  queries Gumtree for only **one target per sweep**, rotating through the
+  full list across sweeps (so a full pass takes a few hours at the 45-min
+  cadence — a handful of requests per hour, well under the burst threshold);
+  within that, requests are paced ~10s apart; and if a challenge still lands,
+  the scraper detects it and backs off 30 minutes rather than hammering.
+  Expect occasionally intermittent Gumtree coverage — eBay is the reliable
+  every-sweep backbone. (We deliberately do **not** try to defeat the bot
+  protection by rotating IPs/fingerprints; low-volume politeness is the right
+  tool for a personal-scale survey.)
 
 ## Future additions (not yet implemented)
 
@@ -140,4 +155,4 @@ Gumtree outage never blocks the eBay sweep):
 3. ✅ Gumtree source (scraper isolated in one module; selectors will break
    when Gumtree changes layout)
 4. ✅ Rolling-median bargain logic (built alongside stage 1, verified in stage 4)
-5. ⬜ Scheduler (APScheduler loop)
+5. ✅ Scheduler (APScheduler loop; immediate first sweep, then every interval)

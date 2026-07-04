@@ -10,6 +10,7 @@ from .config import load_config
 from .logging_setup import setup_logging
 from .notify import build_notifier
 from .pipeline import run_cycle
+from .scheduler import run_scheduler
 from .sources import build_sources
 from .store import Store
 
@@ -29,7 +30,9 @@ def main() -> int:
         help="full sweep, print what WOULD be sent, send nothing",
     )
     parser.add_argument(
-        "--once", action="store_true", help="run a single sweep and exit"
+        "--once",
+        action="store_true",
+        help="run a single sweep and exit (default: scheduled loop)",
     )
     parser.add_argument("--verbose", action="store_true", help="debug logging")
     args = parser.parse_args()
@@ -45,11 +48,10 @@ def main() -> int:
 
     store = Store(args.db)
     try:
-        if not args.once:
-            # Scheduler lands in stage 5; until then run a single sweep.
-            log.warning("scheduled mode not built yet (stage 5); running one sweep")
-
-        run_cycle(config, sources, store, notifier, dry_run=args.dry_run)
+        if args.once:
+            run_cycle(config, sources, store, notifier, dry_run=args.dry_run)
+        else:
+            run_scheduler(config, sources, store, notifier, dry_run=args.dry_run)
     finally:
         store.close()
     return 0

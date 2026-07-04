@@ -93,13 +93,36 @@ def _passes_bargain_gate(
     return Candidate(listing=listing, target=target, median=median, pct_under_median=pct_under)
 
 
+def _select_targets(source: Source, targets: list[Target], store: Store) -> list[Target]:
+    """Pick which targets to query this sweep for one source.
+
+    A source may cap itself with `targets_per_sweep` (Gumtree does, to stay
+    low-volume); we then rotate through the full list across sweeps using a
+    per-source cursor persisted in the store, so over N sweeps every target
+    is covered without ever bursting. Sources without the cap get everything.
+    """
+    per_sweep = getattr(source, "targets_per_sweep", None)
+    if per_sweep is None or per_sweep >= len(targets):
+        return targets
+
+    cursor_key = f"target_cursor:{source.name}"
+    start = int(store.get_meta(cursor_key) or 0) % len(targets)
+    selected = [targets[(start + i) % len(targets)] for i in range(per_sweep)]
+    store.set_meta(cursor_key, str((start + per_sweep) % len(targets)))
+    log.info(
+        "source=%s querying %d/%d targets this sweep: %s",
+        source.name, len(selected), len(targets), [t.name for t in selected],
+    )
+    return selected
+
+
 def sweep(config: Config, sources: list[Source], store: Store) -> list[Candidate]:
     """Run one full sweep across all sources. Never raises on a source failure."""
     from .matching import match_target
 
     candidates: list[Candidate] = []
     for source in sources:
-        for target in config.targets:
+        for target in _select_targets(source, config.targets, store):
             try:
                 listings = source.fetch(target, config)
             except Exception as exc:

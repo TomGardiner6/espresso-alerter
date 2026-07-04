@@ -142,6 +142,11 @@ def _is_challenge(resp: httpx.Response) -> bool:
 
 class GumtreeSource:
     name = "gumtree"
+    # One target per sweep, rotated by the pipeline: with the ~45-min sweep
+    # cadence this is only ~1-2 requests every 45 min (a full rotation of all
+    # targets takes a few hours), which stays comfortably under the Radware
+    # burst threshold. eBay remains the every-sweep backbone.
+    targets_per_sweep = 1
 
     def __init__(self) -> None:
         self._http = httpx.Client(headers=_HEADERS, follow_redirects=True)
