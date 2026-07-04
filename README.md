@@ -72,7 +72,10 @@ A listing only becomes an alert if **all** of these hold:
 
 Qualifying listings are batched into a single digest message, and
 `min_hours_between_messages` (default 3) rate-caps sends globally — held
-alerts are persisted and included in the next allowed message.
+alerts are persisted in SQLite (`pending_alerts`) and included in the next
+allowed message, surviving restarts, notifier outages, and dry runs.
+`--dry-run` still records listings as seen and queues qualifiers as pending
+(so nothing is lost), but sends nothing and never starts the rate-cap clock.
 
 Every listing ever seen is stored keyed by `(source, listing_id)`, so nothing
 is alerted twice.
@@ -85,12 +88,38 @@ is alerted twice.
   scams, wrong/incomplete model, missing accessories) before it reaches
   Telegram. Candidate: Gemini Pro (API key already available). Would slot in
   as a post-gate/pre-notify step in the pipeline, with the key loaded from
-  `.env` (e.g. `GEMINI_API_KEY`) like the other credentials.
+  `.env` (e.g. `GEMINI_API_KEY`) like the other credentials. The LLM should
+  also tag the **model variant** (e.g. pre-2015 Gaggia Classic vs Classic
+  Pro), enabling per-variant price history — variants sell at very different
+  prices, so one blended median is muddier than it should be.
+- **Observe-then-pounce thresholding (optimal stopping)** — with a whole
+  summer to shop, treat it like the secretary problem: spend the first ~2–3
+  weeks in observation mode (build price history, alert only on screaming
+  outliers), then alert on anything better than the best price seen during
+  observation, relaxing the threshold as September approaches so the summer
+  never ends empty-handed. Percentile-based gating (bottom X% of history)
+  instead of a fixed `bargain_price`.
+- **Price-drop re-evaluation** — dedupe currently ignores a listing forever
+  once seen, but sellers cut prices; re-check seen listings whose price has
+  dropped materially (>10%) and let them re-enter the gate at the new price.
+- **Shipping-inclusive pricing** — the Browse API returns shipping options;
+  gate on effective price (item + postage) since £85 + £15 P&P is worse than
+  £95 collected locally.
+- **Seller-trust signals** — eBay returns seller feedback score/percentage;
+  a zero-feedback seller with a great price is a scam tell that should feed
+  the suppression logic.
+- **Weekly market report** — one scheduled Sunday message with per-target
+  medians, sighting counts, and near-misses: proves the alerter is alive
+  (rare alerts are indistinguishable from a broken cron otherwise) and helps
+  recalibrate `config.yaml` prices as the market moves.
+- **Vinted as a source** — there's prior art in `Programming Projects/`
+  (`Vinted_Scraper`); Vinted has espresso gear listed and an unofficial but
+  well-understood API surface.
 
 ## Build stages
 
 1. ✅ eBay source + normaliser + SQLite + dry-run printing
-2. ⬜ Telegram notifier + rate cap
+2. ✅ Telegram notifier + rate cap (persistent pending queue)
 3. ⬜ Gumtree source (scraper isolated in one module; selectors will break
    when Gumtree changes layout)
 4. ✅ Rolling-median bargain logic (built alongside stage 1, verified in stage 4)

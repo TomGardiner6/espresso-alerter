@@ -6,7 +6,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .models import Listing
+from .models import Listing, PendingAlert
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS listings (
@@ -33,6 +33,27 @@ CREATE TABLE IF NOT EXISTS price_history (
     seen_at    TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_history_target ON price_history (target, id);
+
+CREATE TABLE IF NOT EXISTS pending_alerts (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    target           TEXT NOT NULL,
+    source           TEXT NOT NULL,
+    listing_id       TEXT NOT NULL,
+    title            TEXT NOT NULL,
+    price            REAL NOT NULL,
+    url              TEXT NOT NULL,
+    location         TEXT,
+    distance_miles   REAL,
+    median           REAL,
+    pct_under_median REAL,
+    created_at       TEXT NOT NULL,
+    sent_at          TEXT
+);
+
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 
@@ -95,3 +116,66 @@ class Store:
             (target, window),
         ).fetchall()
         return [r[0] for r in rows]
+
+    # -- pending alerts (rate-capped digest queue) ---------------------------
+
+    def add_pending(self, alert: PendingAlert) -> None:
+        self._conn.execute(
+            """INSERT INTO pending_alerts
+               (target, source, listing_id, title, price, url, location,
+                distance_miles, median, pct_under_median, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                alert.target,
+                alert.source,
+                alert.listing_id,
+                alert.title,
+                alert.price,
+                alert.url,
+                alert.location,
+                alert.distance_miles,
+                alert.median,
+                alert.pct_under_median,
+                _now(),
+            ),
+        )
+        self._conn.commit()
+
+    def unsent_alerts(self) -> list[PendingAlert]:
+        rows = self._conn.execute(
+            """SELECT id, target, source, listing_id, title, price, url,
+                      location, distance_miles, median, pct_under_median
+               FROM pending_alerts WHERE sent_at IS NULL ORDER BY id"""
+        ).fetchall()
+        return [
+            PendingAlert(
+                id=r[0], target=r[1], source=r[2], listing_id=r[3], title=r[4],
+                price=r[5], url=r[6], location=r[7], distance_miles=r[8],
+                median=r[9], pct_under_median=r[10],
+            )
+            for r in rows
+        ]
+
+    def mark_sent(self, alert_ids: list[int]) -> None:
+        now = _now()
+        self._conn.executemany(
+            "UPDATE pending_alerts SET sent_at = ? WHERE id = ?",
+            [(now, alert_id) for alert_id in alert_ids],
+        )
+        self._conn.commit()
+
+    # -- meta key/value (e.g. last_message_at) -------------------------------
+
+    def get_meta(self, key: str) -> str | None:
+        row = self._conn.execute(
+            "SELECT value FROM meta WHERE key = ?", (key,)
+        ).fetchone()
+        return row[0] if row else None
+
+    def set_meta(self, key: str, value: str) -> None:
+        self._conn.execute(
+            "INSERT INTO meta (key, value) VALUES (?, ?)"
+            " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+        self._conn.commit()

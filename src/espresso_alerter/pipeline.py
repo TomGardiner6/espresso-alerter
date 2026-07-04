@@ -1,17 +1,21 @@
-"""One sweep: fetch from every source, dedupe, match, gate, report."""
+"""One sweep: fetch from every source, dedupe, match, gate, queue, notify."""
 
 from __future__ import annotations
 
 import logging
 import statistics
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 from .config import Config, Target
-from .models import Listing
+from .models import Listing, PendingAlert
+from .notify.base import Notifier
 from .sources.base import Source
 from .store import Store
 
 log = logging.getLogger(__name__)
+
+_LAST_MESSAGE_KEY = "last_message_at"
 
 
 @dataclass(frozen=True)
@@ -22,6 +26,20 @@ class Candidate:
     target: Target
     median: float | None  # None => insufficient history
     pct_under_median: float | None
+
+    def to_pending(self) -> PendingAlert:
+        return PendingAlert(
+            target=self.target.name,
+            source=self.listing.source,
+            listing_id=self.listing.listing_id,
+            title=self.listing.title,
+            price=self.listing.price,
+            url=self.listing.url,
+            location=self.listing.location,
+            distance_miles=self.listing.distance_miles,
+            median=self.median,
+            pct_under_median=self.pct_under_median,
+        )
 
 
 def _passes_bargain_gate(
@@ -116,21 +134,80 @@ def sweep(config: Config, sources: list[Source], store: Store) -> list[Candidate
     return candidates
 
 
-def format_digest(candidates: list[Candidate]) -> str:
+def format_digest(alerts: list[PendingAlert]) -> str:
     """Skimmable one-message digest, shared by dry-run output and Telegram."""
     lines = ["☕ Espresso bargains:"]
-    for c in candidates:
-        li = c.listing
-        if c.pct_under_median is not None:
-            vs_median = f"{c.pct_under_median:.0f}% under recent median"
+    for a in alerts:
+        if a.pct_under_median is not None:
+            vs_median = f"{a.pct_under_median:.0f}% under recent median"
         else:
             vs_median = "insufficient history"
-        where = li.location or "unknown location"
-        if li.distance_miles is not None:
-            where += f" ({li.distance_miles:.0f} mi)"
+        where = a.location or "unknown location"
+        if a.distance_miles is not None:
+            where += f" ({a.distance_miles:.0f} mi)"
         lines.append(
-            f"• {c.target.name}: £{li.price:.2f} — {vs_median}\n"
-            f"  {where} · {li.source}\n"
-            f"  {li.url}"
+            f"• {a.target}: £{a.price:.2f} — {vs_median}\n"
+            f"  {where} · {a.source}\n"
+            f"  {a.url}"
         )
     return "\n".join(lines)
+
+
+def run_cycle(
+    config: Config,
+    sources: list[Source],
+    store: Store,
+    notifier: Notifier | None,
+    dry_run: bool = False,
+) -> None:
+    """One complete cycle: sweep, queue qualifiers, send if the rate cap allows.
+
+    New qualifiers are always persisted to the pending queue first (so a
+    crash, rate-capped hold, or dry run never loses them); the digest goes
+    out only when `min_hours_between_messages` has elapsed since the last
+    send, and alerts are marked sent only after Telegram accepts the message.
+    """
+    candidates = sweep(config, sources, store)
+    for candidate in candidates:
+        store.add_pending(candidate.to_pending())
+    log.info("sweep complete new_qualifiers=%d", len(candidates))
+
+    pending = store.unsent_alerts()
+    if not pending:
+        log.info("no pending alerts")
+        return
+
+    digest = format_digest(pending)
+
+    if dry_run:
+        print("\n--- DRY RUN: would send this digest ---\n")
+        print(digest)
+        print("\n--- end dry run (nothing sent; alerts stay pending) ---")
+        return
+
+    now = datetime.now(timezone.utc)
+    last_sent_raw = store.get_meta(_LAST_MESSAGE_KEY)
+    if last_sent_raw is not None:
+        last_sent = datetime.fromisoformat(last_sent_raw)
+        window = timedelta(hours=config.min_hours_between_messages)
+        remaining = last_sent + window - now
+        if remaining > timedelta(0):
+            log.info(
+                "rate-capped: holding %d alert(s) for %.1fh more",
+                len(pending), remaining.total_seconds() / 3600,
+            )
+            return
+
+    if notifier is None:
+        log.warning("no notifier configured; holding %d alert(s)", len(pending))
+        return
+
+    try:
+        notifier.send(digest)
+    except Exception:
+        log.exception("notifier=%s send failed; alerts stay pending", notifier.name)
+        return
+
+    store.mark_sent([a.id for a in pending if a.id is not None])
+    store.set_meta(_LAST_MESSAGE_KEY, now.isoformat(timespec="seconds"))
+    log.info("digest sent alerts=%d notifier=%s", len(pending), notifier.name)

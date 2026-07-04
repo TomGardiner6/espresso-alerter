@@ -8,7 +8,8 @@ import sys
 
 from .config import load_config
 from .logging_setup import setup_logging
-from .pipeline import format_digest, sweep
+from .notify import build_notifier
+from .pipeline import run_cycle
 from .sources import build_sources
 from .store import Store
 
@@ -40,27 +41,15 @@ def main() -> int:
         log.error("no sources available — nothing to sweep (check .env credentials)")
         return 1
 
+    notifier = None if args.dry_run else build_notifier()
+
     store = Store(args.db)
     try:
         if not args.once:
             # Scheduler lands in stage 5; until then run a single sweep.
             log.warning("scheduled mode not built yet (stage 5); running one sweep")
 
-        candidates = sweep(config, sources, store)
-        log.info("sweep complete candidates=%d", len(candidates))
-
-        if candidates:
-            digest = format_digest(candidates)
-            if args.dry_run:
-                print("\n--- DRY RUN: would send this digest ---\n")
-                print(digest)
-                print("\n--- end dry run (nothing sent) ---")
-            else:
-                # Telegram notifier lands in stage 2.
-                log.warning("notifier not built yet (stage 2); printing digest instead")
-                print(digest)
-        else:
-            log.info("no qualifying bargains this sweep")
+        run_cycle(config, sources, store, notifier, dry_run=args.dry_run)
     finally:
         store.close()
     return 0
